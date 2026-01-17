@@ -1,0 +1,12 @@
+include README.md
+include LICENSE
+include changelog.md
+recursive-include pass_nice *.py
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude tests *
+exclude test_*.py
+exclude *_test.py
+exclude deploy.py
+exclude DEPLOYMENT.md
+exclude captcha.png

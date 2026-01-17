@@ -1,24 +1,25 @@
-# Changelog: v1.0.1 -> v1.1.0
+# Changelog: V1.1.0 -> V2.0.0 [2026-01-12]
 
-## v1.1.0 Updates
-- 변수, 함수명을 camelCase를 사용하게 변경하였습니다.
-- aiohttp -> httpx로 request module이 변경되었습니다.
-- initSession Request가 2개 감소하였습니다.
-- 모든 웹 요청에 예외 처리가 강화되었습니다.
-- 통신사 선택시 Literal을 사용하도록 변경되었습니다.
-- 주요 변수, 함수명이 변경되었습니다.
+### PASS-NICE 레포지토리가 PyPI에 모듈로 업로드되었습니다!
+- 앞으로는 방치하지 않고 자주 관리하겠습니다.
 
-### New Features
-- X
+### 추가된 기능
+- 프록시 지원 추가
 
-### Bug
-- 특정 상황에서 발생하던 버그를 수정하였습니다. (통신사 관련)
+### 변경사항
+- 함수 실행 후 결과 반환 객체 `<Result>`, `<CaptchaResult>` 추가 (`pass_nice.types`)
 
-### Performance
-- v1.0.1 대비 **유의미한 속도 변화**
-- : initSession Request 2 Step 감소
-- : 전반적인 코드 리팩토링
+- camelCase -> snake_case로 함수/변수명 변경 및 비표준 문법을 수정했습니다. (PEP 8 준수)
 
-## Migration Notes
-- please install httpx module (`requirements.txt`)
-- bug report : telegram @sunr1s2_0
+- 전반적인 예외 처리 강화 및 추후 오류 수정을 위한 예외별 `error_code` 추가
+
+- `send_sms_verification` 함수에서 `birthdate`
+
+- NICE 내부 업데이트 대응 
+
+### 오류 수정
+- NICE 내부 업데이트 후 일부 기능이 작동하지 않던 오류를 수정하였습니다.
+
+### 사용 중단 예정 (Deprecated)
+- `getCaptcha` 함수 지원 종료 예정
+- V1 사용자를 위하여 override 처리해뒀지만 곧 삭제될 예정입니다.

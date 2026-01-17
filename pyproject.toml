@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pass-nice"
+version = "2.0.0"
+description = "NICE 아이디 본인인증 요청을 자동화해주는 비공식 모듈"
+readme = "readme.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Developer", email = "sunr1s2@proton.me"}
+]
+maintainers = [
+    {name = "Developer", email = "sunr1s2@proton.me"}
+]
+keywords = ["nice", "verification", "sms", "identity", "korea", "authentication"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+    "Topic :: Security",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "httpx>=0.25.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/shy9-29/PASS-NICE"
+Repository = "https://github.com/shy9-29/PASS-NICE"
+Issues = "https://github.com/shy9-29/PASS-NICE/issues"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/pass_nice",
+    "/readme.md",
+    "/changelog.md",
+    "/LICENSE",
+]
+exclude = [
+    "/tests",
+    "/test_*.py",
+    "/*_test.py",
+    "/deploy.py",
+    "/DEPLOYMENT.md",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["pass_nice"]
+exclude = [
+    "/tests",
+    "/test_*.py",
+    "/*_test.py",
+]

@@ -83,3 +83,6 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# 프로젝트 관련
+captcha.png
