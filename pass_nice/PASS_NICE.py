@@ -287,7 +287,7 @@ class PASS_NICE:
         
         return match.group(1)
 
-    # ----- async process functions ----- #
+    # ----- context manager ----- #
     async def close(self) -> None:
         """HTTP 클라이언트를 종료합니다."""
         await self.client.aclose()
