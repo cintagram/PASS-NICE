@@ -25,23 +25,19 @@ class PASS_NICE:
         - 따라서, 다른 요청업체 엔드포인트만 따서 checkplusDataRequest URL을 바꾸시면 대부분 동작합니다.
     """
 
-    def __init__(self, cellCorp: Literal["SK", "KT", "LG", "SM", "KM", "LM"], proxy: Optional[str] = None):
+    def __init__(self, cell_corp: Literal["SK", "KT", "LG", "SM", "KM", "LM"], proxy: Optional[str] = None):
         """
         파라미터:
             * cellCorp (str): 인증 요청 대상자의 통신사
             * proxy (str, optional): 프록시 URL (Ex: "http://host:port" 또는 "http://user:pass@host:port")
         
-        Raises:
-            ValidationError: 지원하지 않는 통신사 코드가 전달된 경우
         """
-        if cellCorp not in ["SK", "KT", "LG", "SM", "KM", "LM"]:
-            raise ValidationError(f"지원하지 않는 통신사입니다: {cellCorp}")
-            
-        self.client = httpx.AsyncClient(proxy=proxy, timeout=30.0)
-        self.cell_corp = cellCorp
-        self._is_initialized = False
 
-        self._host_isp_mapping = {
+        self.client = httpx.AsyncClient(proxy=proxy, timeout=30.0)
+        self.cell_corp = cell_corp
+        self._is_initialized, self._is_verify_sent = False, False
+
+        self._HOST_ISP_MAPPING = {
             "SK": "COMMON_MOBILE_SKT",
             "SM": "COMMON_MOBILE_SKT", 
             "KT": "COMMON_MOBILE_KT",
@@ -50,12 +46,15 @@ class PASS_NICE:
             "LM": "COMMON_MOBILE_LGU"
         }
         
-        self._auth_type = "SMS" # TODO: add pass app verification
+        self._AUTH_TYPE: str = ""
 
-    async def init_session(self) -> Result:
+    async def init_session(self, auth_type: Literal["sms"]) -> Result[None]: 
+        # TODO: Add Pass App / QR Verification
         """
         현재 클래스의 세션을 초기화합니다.
-        해당 과정 없이 인증을 진행할 수 없습니다.
+        
+        파라미터:
+        * auth_type: str
 
         ```
         await <Client>.init_session()
@@ -64,113 +63,75 @@ class PASS_NICE:
         """
 
         if self._is_initialized:
-            return Result(False, "이미 초기화된 세션입니다.", 0)
+            return Result(False, "이미 초기화된 세션입니다.")
 
         try:
-            checkplusDataRequest = await self.client.get('https://www.ex.co.kr:8070/recruit/company/nice/checkplus_main_company.jsp')
-            checkplusData = checkplusDataRequest.text
+            checkplus_data_request = await self.client.get('https://www.ex.co.kr:8070/recruit/company/nice/checkplus_main_company.jsp')
+            checkplus_data = checkplus_data_request.text
             
-            m_match = re.search(r'name=["\']m["\']\s+value=["\']([^"\'\']+)["\']', checkplusData)
-            encode_match = re.search(r'name=["\']EncodeData["\']\s+value=["\']([^"\'\']+)["\']', checkplusData)
-            
-            if not m_match or not encode_match:
-                raise ParseError("요청업체 응답 데이터 파싱에 실패했습니다.")
-                
-            m = m_match.group(1)
-            EncodeData = encode_match.group(1)
-
-            wcCookie = f'{uuid.uuid4()}_T_{random.randint(10000, 99999)}_WC'  
-            self.client.cookies.update({'wcCookie': wcCookie})
-
         except httpx.RequestError as e:
             raise NetworkError(f"요청업체와의 통신에 실패했습니다: {str(e)}", 1)
 
+        m = self.parse_html(checkplus_data, "m", "input")
+        encode_data = self.parse_html(checkplus_data, "EncodeData", "input")
+
+        wc_cookie = f'{uuid.uuid4()}_T_{random.randint(10000, 99999)}_WC'  
+        self.client.cookies.update({'wcCookie': wc_cookie})
+
         try:
-            checkplusRequest = await self.client.post('https://nice.checkplus.co.kr/CheckPlusSafeModel/checkplus.cb',
+            checkplus_request = await self.client.post(
+                'https://nice.checkplus.co.kr/CheckPlusSafeModel/checkplus.cb',
                 data={
                     'm': m, 
-                    'EncodeData': EncodeData
+                    'EncodeData': encode_data
                 }
             )
-
-            service_info_match = re.search(r'const\s+SERVICE_INFO\s*=\s*"([^"]+)"', checkplusRequest.text)
-            if not service_info_match:
-                raise ParseError("나이스 응답 데이터에서 SERVICE_INFO를 찾을 수 없습니다.")
-            self._SERVICE_INFO = service_info_match.group(1)
-
-            mainTracerRequest = await self.client.post('https://nice.checkplus.co.kr/cert/main/tracer',
-                data={
-                    'accTkInfo': self._SERVICE_INFO
-                }
-            )
-            ip_match = re.search(r'callTracerApiInput\(\s*"[^"]*",\s*"(\d{1,3}(?:\.\d{1,3}){3})",', mainTracerRequest.text)
-            if not ip_match:
-                raise ParseError("나이스 응답 데이터에서 IP 정보를 찾을 수 없습니다.")
-            IP = ip_match.group(1)
 
         except httpx.RequestError as e:
             raise NetworkError(f"나이스 서버와 통신에 실패했습니다: {str(e)}", 3)
 
+        self._SERVICE_INFO = self.parse_html(checkplus_request.text, "SERVICE_INFO")
+
         try:
-            await self.client.post('https://nice.checkplus.co.kr/cert/main/menu',
+            await self.client.post(
+                'https://nice.checkplus.co.kr/cert/main/menu',
                 data={
                     'accTkInfo': self._SERVICE_INFO
                 }
             )
 
-            await self.client.post('https://ifc.niceid.co.kr/TRACERAPI/inputQueue.do',
-                data = {
-                    "host": self._host_isp_mapping.get(self.cell_corp),
-                    "ip": IP,
-                    "loginId": wcCookie,
-                    "port": "80",
-                    "pageUrl": "mobile_cert_telecom",
-                    "userAgent": ""
-                }
-            )
-
-        except httpx.RequestError as e:
-            raise NetworkError(f"나이스 서버와 통신에 실패했습니다: {str(e)}", 5)
-        
-        try:
-            methodRequest = await self.client.post(
-                url = 'https://nice.checkplus.co.kr/cert/mobileCert/method', 
-                data = {
+            cert_method_request = await self.client.post(
+                'https://nice.checkplus.co.kr/cert/mobileCert/method', 
+                data={
                     "accTkInfo": self._SERVICE_INFO,
                     "selectMobileCo": self.cell_corp, 
                     "os": "Windows"
                 }
             )
 
-            cert_hash_match = re.search(r'<input\s+type=["\']hidden["\']\s+name=["\']certInfoHash["\']\s+value=["\']([^"\'\']+)["\']>', methodRequest.text)
-            if not cert_hash_match:
-                raise ParseError("나이스 응답 데이터에서 certInfoHash를 찾을 수 없습니다.")
-            certInfoHash = cert_hash_match.group(1)
-
         except httpx.RequestError as e:
             raise NetworkError(f"나이스 서버와 통신에 실패했습니다: {str(e)}", 7)
 
+        cert_info_hash = self.parse_html(cert_method_request.text, "certInfoHash", "input")
+
         try:
-            certProcRequest = await self.client.post(
-                url = 'https://nice.checkplus.co.kr/cert/mobileCert/sms/certification',
+            cert_proc_request = await self.client.post(
+                url=f'https://nice.checkplus.co.kr/cert/mobileCert/{auth_type}/certification',
                 data = {
-                    "certInfoHash": certInfoHash,
+                    "certInfoHash": cert_info_hash,
                     "accTkInfo": self._SERVICE_INFO,
                     "mobileCertAgree": "Y"
                 }
             )
 
-            captcha_match = re.search(r'const\s+captchaVersion\s*=\s*"([^"]+)"', certProcRequest.text)
-            if not captcha_match:
-                raise ParseError("나이스 응답 데이터에서 captchaVersion을 찾을 수 없습니다.")
-            self._captcha_version = captcha_match.group(1)
-
         except httpx.RequestError as e:
             raise NetworkError(f"나이스 서버와 통신에 실패했습니다: {str(e)}", 9)
 
+        self._CAPTCHA_VERSION = self.parse_html(cert_proc_request.text, "captchaVersion")
+
         self._is_initialized = True
 
-        return Result(True, '세션 초기화에 성공했습니다.', 9999)
+        return Result(True, '세션 초기화에 성공했습니다.')
 
     async def retrieve_captcha(self) -> Result[bytes]:
         """
@@ -182,24 +143,26 @@ class PASS_NICE:
         Raises:
             SessionNotInitializedError: 세션이 초기화되지 않은 경우
         """ 
-        if not self._is_initialized or not hasattr(self, '_captcha_version'):
+
+        if not self._is_initialized or not hasattr(self, '_CAPTCHA_VERSION'):
             raise SessionNotInitializedError("세션이 초기화되지 않았습니다. init_session()을 먼저 호출하세요.")
 
         try:
-            captcha_request = await self.client.get(f'https://nice.checkplus.co.kr/cert/captcha/image/{self._captcha_version}')
+            captcha_request = await self.client.get(f'https://nice.checkplus.co.kr/cert/captcha/image/{self._CAPTCHA_VERSION}')
             content = captcha_request.content
             
-            return Result(True, "캡챠 이미지 확인에 성공했습니다.", 9999, content)
-        
         except httpx.RequestError as e:
             raise NetworkError(f"나이스 서버와 통신에 실패했습니다: {str(e)}", 1)
 
+        return Result(True, "캡챠 이미지 확인에 성공했습니다.", content)
+
     async def send_sms_verification(
-        self, name: str, birthdate: str, gender: Literal[
+        self, name: str, birthdate: str, 
+        gender: Literal[
             "1", "2", "3", "4",  # 내국인
             "5", "6", "7", "8",  # 외국인
         ], phone: str, captcha_answer: str
-    ) -> Result:
+    ) -> Result[None]:
         """
         휴대폰 본인확인 요청을 전송합니다.
 
@@ -216,8 +179,8 @@ class PASS_NICE:
         ```
         """
 
-        if not self._is_initialized or not self._captcha_version:
-            return Result(False, "해당 함수를 이용하려면 세션 초기화가 필요합니다.", 0)
+        if not self._is_initialized or not self._CAPTCHA_VERSION:
+            return Result(False, "해당 함수를 이용하려면 세션 초기화가 필요합니다.")
     
         try:
             sms_proc_request = await self.client.post(
@@ -229,7 +192,7 @@ class PASS_NICE:
                 data = {
                     "userNameEncoding": quote(name),
                     "userName": name,
-                    "myNum1": birthdate,  # TODO: [0:6]이였는데 확인 필요
+                    "myNum1": birthdate,
                     "myNum2": gender,
                     "mobileNo": phone,
                     "captchaAnswer": captcha_answer
@@ -243,21 +206,17 @@ class PASS_NICE:
         response_json = sms_proc_request.json()
         if response_json.get('code') != "SUCCESS":
             error_msg = response_json.get('message', '올바른 본인인증 정보를 입력해주세요.')
-            return Result(False, error_msg, 3)
+            return Result(False, error_msg)
         
         try:
-            smsConfirmRequest = await self.client.post('https://nice.checkplus.co.kr/cert/mobileCert/sms/confirm')
-            service_info_match = re.search(r'const\s+SERVICE_INFO\s*=\s*"([^"]+)"', smsConfirmRequest.text)
-            if service_info_match:
-                self._SERVICE_INFO = service_info_match.group(1)
+            await self.client.post('https://nice.checkplus.co.kr/cert/mobileCert/sms/confirm')
 
         except httpx.RequestError as e:
             raise NetworkError(f"나이스 서버와 통신에 실패했습니다: {str(e)}", 4)
 
-        self.name, self.birthdate, self.phone = name, birthdate, phone
         self._is_verify_sent = True
 
-        return Result(True, "휴대폰 본인인증 요청을 성공적으로 전송했습니다.", 9999)
+        return Result(True, "휴대폰 본인인증 요청을 성공적으로 전송했습니다.")
 
     async def check_sms_verification(self, sms_code: str) -> Result[None]:
         """
@@ -270,14 +229,14 @@ class PASS_NICE:
             Result[None]: 성공/실패 결과
             
         Raises:
-            SessionNotInitializedError: 세션이 초기화되지 않은 경우
+            SessionNotInitializedError: 세션이 올바르게 초기화되지 않은 경우
             ValidationError: SMS 코드 형식이 올바르지 않은 경우
         """
-        if not self._is_initialized or not hasattr(self, '_captcha_version'):
-            raise SessionNotInitializedError("세션이 초기화되지 않았습니다. init_session()을 먼저 호출하세요.")
+        if not self._is_initialized or not hasattr(self, '_CAPTCHA_VERSION'):
+            raise SessionNotInitializedError("세션이 정상적으로 초기화되지 않았습니다.")
 
-        if not hasattr(self, '_is_verify_sent') or not self._is_verify_sent:
-            return Result(False, "아직 SMS 코드를 전송하지 않았습니다.", 1)
+        if not self._is_verify_sent:
+            return Result(False, "아직 인증을 진행하지 않았습니다.")
 
         # SMS 코드 검증
         if not sms_code.strip() or len(sms_code) != 6 or not sms_code.isdigit():
@@ -305,14 +264,30 @@ class PASS_NICE:
             raise ParseError(f"나이스 응답 데이터 파싱에 실패했습니다: {str(e)}", 3)
 
         if response_code == "RETRY":
-            return Result(False, "올바른 인증코드를 입력해주세요.", 4)
+            return Result(False, "올바른 인증코드를 입력해주세요.")
 
         if response_code != "SUCCESS":
             error_msg = response_json.get('message', '인증 확인 도중 문제가 발생하였습니다.')
-            return Result(False, error_msg, 5)
+            return Result(False, error_msg)
 
-        return Result(True, "인증이 완료되었습니다.", 9999)
+        return Result(True, "본인인증이 완료되었습니다.")
 
+    # ----- helper ----- #
+    @staticmethod
+    def parse_html(html: str, var_name: str, parse_type: Literal["const", "input"] = "const") -> str:
+        if parse_type == "const":
+            pattern = rf'const\s+{var_name}\s*=\s*"([^"]+)"'
+        
+        else:
+            pattern = rf'<input\s+type=["\']hidden["\']\s+name=["\']{var_name}["\']\s+value=["\']([^"\'\']+)["\']>'
+
+        match = re.search(pattern, html)
+        if not match:
+            raise ParseError(f"{var_name} 데이터 파싱에 실패했습니다.")
+        
+        return match.group(1)
+
+    # ----- async process functions ----- #
     async def close(self) -> None:
         """HTTP 클라이언트를 종료합니다."""
         await self.client.aclose()

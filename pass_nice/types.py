@@ -12,7 +12,6 @@ class Result(Generic[T]):
     """API 호출 결과를 나타내는 제네릭 데이터 클래스"""
     status: bool
     message: str
-    error_code: int
     data: Optional[T] = None
     
     @property
