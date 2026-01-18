@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pass-nice"
-version = "2.0.0"
+version = "2.0.1"
 description = "NICE 아이디 본인인증 요청을 자동화해주는 비공식 모듈"
 readme = "readme.md"
 license = {text = "MIT"}
