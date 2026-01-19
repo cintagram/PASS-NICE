@@ -3,7 +3,8 @@ PASS-NICE 타입 정의
 """
 
 from dataclasses import dataclass
-from typing import Generic, TypeVar, Optional, Any
+from datetime import datetime
+from typing import Any, Generic, Literal, Optional, TypeVar
 
 T = TypeVar("T")
 
@@ -33,3 +34,12 @@ class Result(Generic[T]):
         if self.data is not None:
             result["Content"] = self.data
         return result
+
+@dataclass(frozen=True)
+class VerificationData():
+    """본인인증 데이터를 나타내는 데이터 클래스"""
+    name: str
+    birthdate: datetime
+    gender: Literal["1", "2"] # 남자, 여자
+    phone_number: str
+    mobile_carrier: Literal["SK", "KT", "LG", "SM", "KM", "LM"]
